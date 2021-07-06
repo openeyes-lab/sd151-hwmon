@@ -1,0 +1,29 @@
+/*
+ * Device tree overlay for sd151 on spi0.0
+ */
+/dts-v1/;
+/plugin/;
+
+/ {
+
+	compatible = "brcm,bcm2835", "brcm,bcm2836", "brcm,bcm2708", "brcm,bcm2709";
+
+	/* the spi config of the can-controller itself binding everything together */
+	fragment@0 {
+		target = <&i2c1>;
+		__overlay__ {
+			#address-cells = <1>;
+			#size-cells = <0>;
+			sd151@35 {
+        compatible = "i2c,sd151";
+        reg = <0x35>;
+        rtc_enabled;
+        wdog_enabled;
+        wdog_timeout = <15>;
+        wdog_wait = <120>;
+        status = "okay";
+			};
+		};
+	};
+
+};
