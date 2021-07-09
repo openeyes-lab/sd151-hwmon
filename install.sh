@@ -56,6 +56,14 @@ else
 	echo "dtoverlay=sd151-hwmon" | sudo tee -a /boot/config.txt
 fi
 
+# Install udev rules
+if [ ! -f "/etc/udev/rules.d/70-power-switch.rules" ]; then
+        sudo touch /etc/udev/rules.d/70-power-switch.rules    
+fi
+
+echo "# Match the special power key input/event" | sudo tee -a /etc/udev/rules.d/70-power-switch.rules  
+echo 'ACTION=="add", SUBSYSTEM=="input", ATTRS{name}=="sd151", TAG+="power-switch"' | sudo tee -a /etc/udev/rules.d/70-power-switch.rules
+
 # Install dkms
 uname_r=$(uname -r)
 src="build"

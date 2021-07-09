@@ -36,21 +36,104 @@
 #include <linux/hwmon.h>
 #include <linux/jiffies.h>
 #include <linux/reboot.h>
+#include <linux/input.h>
+#include <linux/init.h>
+#include <linux/sched/signal.h>
+#include <asm/irq.h>
+#include <asm/gpio.h>
 
 #include "sd151.h"
 
-static struct sd151_private *notify_data;
+#define DRV_NAME	"sd151"
+
+static struct sd151_private *pdata;
 
 const struct regmap_config sd151_regmap_config = {
 	.max_register = SD151_NUM_REGS - 1,
 };
 
 static const struct i2c_device_id sd151_id[] = {
-	{ "sd151", 0 },
+	{ DRV_NAME, 0 },
 	{ }
 };
 MODULE_DEVICE_TABLE(i2c, sd151_id);
 
+/*****************************************************************************
+ * INPUT DEVICE
+ *************************************************************************** */
+
+static irqreturn_t sd151_irq(int irq, void *data)
+{
+	struct sd151_private *priv = data;
+	schedule_work(&priv->irq_work);
+	printk(KERN_INFO "interrupt");
+  return IRQ_HANDLED;
+}
+
+static void sd151_irq_work_handler(struct work_struct *work)
+{
+	struct sd151_private *priv = container_of(work, struct sd151_private, irq_work);
+	struct device *dev = &priv->client->dev;
+	int ret;
+	int val;
+	int i,curr,prev,pwr;
+//	char *shutdown_argv[] = { "/sbin/shutdown", "-h", "-P", "now", NULL };
+
+	printk(KERN_INFO "interrupt on work");
+
+	/* get the chip status */
+	ret = regmap_read(priv->regmap, SD151_STATUS, &val);
+	if (ret < 0) {
+		dev_err(dev, "failed to read I2C chip status\n");
+		return;
+	}
+
+	/* clear irq */
+	ret = regmap_write(priv->regmap, SD151_COMMAND,	SD151_IRQ_ACKNOWLEDGE);
+	if (ret < 0) {
+		dev_err(dev, "failed to write I2C command\n");
+	}
+
+	if (val&SD151_STATUS_IRQ_BUTTONS) {
+		ret = regmap_read(priv->regmap, SD151_BUTTONS, &val);
+		if (ret < 0) {
+			dev_err(dev, "failed to read I2C buttons\n");
+			return;
+		}
+
+		curr = val;
+		prev =  priv->inp.button;
+		priv->inp.button = val;
+		pwr = priv->inp.power;
+
+		printk(KERN_INFO "input btn=%x prev=%x pwr=%x",curr,prev,pwr);
+
+		for (i=0; i<NBUTTON; i++) {
+			if ((curr&1)!=(prev&1)) {
+				if (pwr&1) {
+					//if(curr&1){
+					//	set_current_state(TASK_INTERRUPTIBLE);
+					//	call_usermodehelper(shutdown_argv[0], shutdown_argv, NULL, UMH_NO_WAIT);
+					//}
+					//kernel_power_off();
+					//kill_cad_pid(SIGRTMIN + 4, 1);
+					printk(KERN_INFO "send power signal");
+					input_report_key(priv->inp.button_dev, KEY_POWER, curr&1);
+					//kernel_power_off()
+				} else {
+					input_report_key(priv->inp.button_dev, BTN_0+i, curr&1);
+					printk(KERN_INFO "send button");
+				}
+			}
+			curr=curr>>1;
+			prev=prev>>1;
+			pwr=pwr>>1;
+		}
+		printk(KERN_INFO "input sync");
+		input_sync(priv->inp.button_dev);
+	}
+
+}
 /**
  * @brief HWMON function sd151 get voltage
  * @param [in] dev struct device pointer
@@ -691,7 +774,7 @@ static int sd151_rtc_init(struct device *dev)
 static int sd151_notify_reboot(struct notifier_block *this,
 			unsigned long code, void *x)
 {
-	struct sd151_private *data = notify_data;
+	struct sd151_private *data = pdata;
 	int ret=0;
 
 	switch (code) {
@@ -717,6 +800,39 @@ static struct notifier_block sd151_notifier = {
 	.priority	= 0,
 };
 
+int try_input_device_registration(struct device *dev,struct sd151_private *data)
+{
+	int ret;
+
+	data->inp.button_dev = input_allocate_device();
+	if (!data->inp.button_dev) {
+		dev_err(dev,"Cannot allocate input device.\n");
+		free_irq(data->irq, sd151_irq);
+		return -ENOMEM;
+	}
+	data->inp.button_dev->name = DRV_NAME;
+
+	//data->inp.button_dev->evbit[0] = BIT_MASK(EV_KEY);
+	//data->inp.button_dev->keybit[BIT_WORD(BTN_0)] = BIT_MASK(BTN_0);
+
+	__set_bit(EV_KEY, data->inp.button_dev->evbit);
+	__set_bit(KEY_POWER, data->inp.button_dev->keybit);
+	__set_bit(BTN_0, data->inp.button_dev->keybit);
+	__set_bit(BTN_1, data->inp.button_dev->keybit);
+
+	ret = input_register_device(data->inp.button_dev);
+	if (ret) {
+		dev_err(dev,"button.c: Failed to register device\n");
+		free_irq(data->irq, sd151_irq);
+		input_free_device(data->inp.button_dev);
+		return -ENOMEM;
+	}
+
+	data->inp.power = 0x0001;
+
+	return 0;
+}
+
 /****************************************************************************
  * SD151 PROBE
  ****************************************************************************/
@@ -735,7 +851,36 @@ int sd151_probe(struct i2c_client *client, struct regmap *regmap)
 	if (!data)
 		return -ENOMEM;
 
-	notify_data = data;
+	pdata = data;
+
+	data->client = client;
+	data->regmap = regmap;
+
+
+	if (gpio_is_valid(IRQ_GPIO)) {
+		if(gpio_request(IRQ_GPIO,"SD151_IRQ") < 0){
+    	dev_err(dev,"ERROR: GPIO %d request\n", IRQ_GPIO);
+    	return -EBUSY;
+  	}
+		gpio_direction_input(IRQ_GPIO);
+		//if(gpio_set_debounce(IRQ_GPIO, 200) < 0){
+		//	dev_err(dev,"ERROR: gpio_set_debounce - %d\n", IRQ_GPIO);
+		//	return -EBUSY;
+		//}
+		data->irq = gpio_to_irq(IRQ_GPIO);
+		if (request_irq(data->irq, sd151_irq, IRQF_TRIGGER_FALLING, DRV_NAME, data)) {
+			dev_err(dev, "Can't allocate irq %d",data->irq);
+			return -EBUSY;
+		}
+
+		INIT_WORK(&data->irq_work, sd151_irq_work_handler);
+
+	} else {
+		dev_err(dev, "Invalid GPIO %d",IRQ_GPIO);
+		return -EBUSY;
+	}
+
+
 
 	dev_set_drvdata(dev, data);
 
@@ -761,7 +906,6 @@ int sd151_probe(struct i2c_client *client, struct regmap *regmap)
 		goto error;
 	}
 
-	data->regmap = regmap;
 
 	data->firmware_version = val;
 
@@ -771,7 +915,7 @@ int sd151_probe(struct i2c_client *client, struct regmap *regmap)
 		dev_err(dev, "failed to access device when reading status\n");
 		goto error;
 	}
-	switch (val) {
+	switch (val&SD151_STATUS_BOOT_MASK) {
 		case SD151_STATUS_POWERUP:
 			dev_info(dev, "start from POWER-UP");
 			break;
@@ -792,6 +936,7 @@ int sd151_probe(struct i2c_client *client, struct regmap *regmap)
 			break;
 	}
 
+	/* HWMON register */
 	hwmon_dev = devm_hwmon_device_register_with_info(dev, client->name,
 							 data, &sd151_chip_info, NULL);
 
@@ -825,6 +970,9 @@ int sd151_probe(struct i2c_client *client, struct regmap *regmap)
 		sd151_rtc_init(dev);
 	}
 
+
+	try_input_device_registration(dev,data);
+
 	/*
 	 * Register the tts_notifier to reboot notifier list so that the _TTS
 	 * object can also be evaluated when the system enters S5.
@@ -856,6 +1004,8 @@ static int sd151_remove(struct i2c_client *client)
 	struct sd151_private *data = dev_get_drvdata(dev);
 
 	watchdog_unregister_device(&data->wdd);
+	free_irq(data->irq, sd151_irq);
+	input_free_device(data->inp.button_dev);
 	unregister_reboot_notifier(&sd151_notifier);
 	return 0;
 }
@@ -863,7 +1013,7 @@ static int sd151_remove(struct i2c_client *client)
 static struct i2c_driver sd151_i2c_driver = {
 	.class		= I2C_CLASS_HWMON,
 	.driver = {
-		.name = "sd151",
+		.name = DRV_NAME,
 	},
 	.probe    = sd151_i2c_probe,
 	.remove	  = sd151_remove,

@@ -38,12 +38,23 @@
 struct device;
 
 #define NUM_CH_VIN                      3
+#define NBUTTON                         2
+
+#define IRQ_GPIO                        23
+
+struct sd151_input {
+  struct input_dev     *button_dev;
+  u16                  button;
+  u16                  power;
+};
 
 struct sd151_private {
   struct i2c_client             *client;
   struct regmap                 *regmap;
   struct watchdog_device        wdd;
   struct rtc_device             *rtc;
+  struct work_struct            irq_work;
+  struct sd151_input            inp;
   bool                          overlay_wdog_nowayout;
   int                           overlay_wdog_timeout;
   int                           overlay_wdog_wait;
@@ -58,6 +69,7 @@ struct sd151_private {
   bool                          volt_valid[NUM_CH_VIN];
   u16                           volt[NUM_CH_VIN];
   unsigned long                 volt_updated[NUM_CH_VIN];
+  unsigned int                  irq;
   /* Voltage max registers */
   bool volt_max_valid[NUM_CH_VIN];
   u16 volt_max[NUM_CH_VIN];
@@ -82,6 +94,8 @@ struct sd151_private {
 #define SD151_STATUS_WAKEUP             0x0005
 #define SD151_STATUS_BOOT_MASK          0x0007
 #define SD151_STATUS_WDOG_EN            0x0008
+#define SD151_STATUS_WAKEUP_EN          0x0010
+#define SD151_STATUS_IRQ_BUTTONS        0x0100
 
 #define SD151_COMMAND                   0x04
 #define SD151_WDOG_ENABLE               0x01
@@ -89,6 +103,8 @@ struct sd151_private {
 #define SD151_EXEC_POWEROFF             0x03
 #define SD151_EXEC_REBOOT               0x04
 #define SD151_EXEC_HALT                 0x05
+#define SD151_PWOFFWAKEUP               0x06
+#define SD151_IRQ_ACKNOWLEDGE           0x07
 
 #define SD151_WDOG_REFRESH              0x05
 #define SD151_WDOG_REFRESH_MAGIC_VALUE  0x0d1e
@@ -104,8 +120,8 @@ struct sd151_private {
 #define SD151_VOLTAGE_5V_BOARD_MAX      0x0C
 #define SD151_VOLTAGE_5V_RPI            0x0D
 #define SD151_VOLTAGE_3V3_RPI           0x10
-#define SD151_VOLTAGE_1V8_RPI           0x13
-#define SD151_VOLTAGE_12V_BOARD         0x16
+
+#define SD151_BUTTONS                   0x14
 
 #define SD151_RTC0                      0x1A
 #define SD151_RTC1                      0x1B
