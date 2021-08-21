@@ -61,6 +61,18 @@ else
 	echo "dtoverlay=sd151-hwmon" | sudo tee -a /boot/config.txt
 fi
 
+# enable i2c_arm
+
+sudo sed -i '/dtparam=i2c_arm=on/s/^#//g' /boot/config.txt
+
+# enable FAN control
+
+if grep -q "dtdtoverlay=gpio-fan" /boot/config.txt ; then
+	echo "confi.txt already prepared"
+else
+	echo "dtoverlay=gpio-fan,gpiopin=18,temp=50000" | sudo tee -a /boot/config.txt
+fi
+
 # Setup lirc
 
 LIRC_OPT_CONF = "/etc/lirc/lirc_options.conf"
