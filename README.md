@@ -74,6 +74,11 @@ bash uninstall.sh
 The firmware on the MCU implement a SLAVE I2C interface and answer to the
 address 0x35.
 
+## Lirc
+
+In order to handle a specific remote controller, follow:
+https://devkimchi.com/2020/08/12/turning-raspberry-pi-into-remote-controller/
+
 ## Filesys
 
 HWMON is created into /sys/class/hwmon/hwmon0...x directory
