@@ -75,7 +75,7 @@ fi
 
 # Setup lirc
 
-LIRC_OPT_CONF = "/etc/lirc/lirc_options.conf"
+LIRC_OPT_CONF="/etc/lirc/lirc_options.conf"
 if [ ! -f $LIRC_OPT_CONF ]; then
         echo "LIRC not installed"
 				exit 1
@@ -84,7 +84,7 @@ fi
 sudo sed -i '/devinput/c\driver = default' $LIRC_OPT_CONF
 sudo sed -i '/device/c\device = /dev/lirc0' $LIRC_OPT_CONF
 
-LIRC_HW_CONF = "/etc/lirc/hardware.conf"
+LIRC_HW_CONF="/etc/lirc/hardware.conf"
 if [ ! -f $LIRC_HW_CONF ]; then
         sudo touch $LIRC_HW_CONF
 fi
