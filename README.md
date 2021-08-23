@@ -13,16 +13,24 @@ For more information about PI-POW devices visit https://www.open-eyes.it/pipow/
 The sd151-hwmon Linux driver dialogues with firmware on ATMEL ATTINY817 MCU mounted
 on the PI-POW HAT
 
+## Platform setup
+
+Upgrade system:
+```
+sudo apt update
+sudo apt upgrade
+```
+
+reboot and install headers
+
+```
+sudo apt-get install raspberrypi-kernel-headers git
+```
+
 ## Manual installation
 
 ### Build instructions
 
-Prepare Raspberry for build:
-```
-sudo apt update
-sudo apt upgrade
-sudo apt-get install raspberrypi-kernel-headers git
-```
 Download from git:
 ```
 git clone https://github.com/openeyes-lab/sd151-hwmon.git
@@ -153,3 +161,13 @@ sudo sh -c "echo +60 > /sys/class/rtc/rtc0/wakealarm"
 sudo shutdown -P now
 ```
 The RPI shuts down and restarts after 60s
+
+### Device Tree problems debug
+
+In case of issue when loading overlay (ie the driver module is not loaded) use the command:
+
+```
+sudo vcdbg log msg
+```
+
+to debug 
