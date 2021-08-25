@@ -1,4 +1,4 @@
-sd151-hwmon-objs := sd151.o
+sd151-hwmon-objs := sd151.o sd151_proc.o
 
 obj-m += sd151-hwmon.o
 

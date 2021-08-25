@@ -34,6 +34,8 @@
 #include <linux/rtc.h>
 #include <linux/time64.h>
 #include <linux/watchdog.h>
+#include <linux/i2c.h>
+#include <asm/gpio.h>
 
 struct device;
 
@@ -49,12 +51,14 @@ struct sd151_input {
 };
 
 struct sd151_private {
+	struct device                 *dev;
   struct i2c_client             *client;
   struct regmap                 *regmap;
   struct watchdog_device        wdd;
   struct rtc_device             *rtc;
   struct work_struct            irq_work;
   struct sd151_input            inp;
+	struct proc_dir_entry         *proc_entry;
   bool                          overlay_wdog_nowayout;
   int                           overlay_wdog_timeout;
   int                           overlay_wdog_wait;
@@ -105,6 +109,8 @@ struct sd151_private {
 #define SD151_EXEC_HALT                 0x05
 #define SD151_PWOFFWAKEUP               0x06
 #define SD151_IRQ_ACKNOWLEDGE           0x07
+#define SD151_BUZZER_LOW                0x0A
+#define SD151_BUZZER_HIGH               0x0B
 
 #define SD151_WDOG_REFRESH              0x05
 #define SD151_WDOG_REFRESH_MAGIC_VALUE  0x0d1e
@@ -131,5 +137,8 @@ struct sd151_private {
 #define SD151_WAKEUP2                   0x1F
 
 #define SD151_MIN_WDOG_WAIT             45
+
+extern int sd151_proc_init(struct sd151_private *);
+extern int sd151_proc_remove(struct sd151_private *);
 
 #endif /* _SD151_H */

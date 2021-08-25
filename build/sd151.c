@@ -31,7 +31,7 @@
  */
 
 #include <linux/module.h>
-#include <linux/i2c.h>
+//#include <linux/i2c.h>
 #include <linux/regmap.h>
 #include <linux/hwmon.h>
 #include <linux/jiffies.h>
@@ -40,7 +40,7 @@
 #include <linux/init.h>
 #include <linux/sched/signal.h>
 #include <asm/irq.h>
-#include <asm/gpio.h>
+//#include <asm/gpio.h>
 
 #include "sd151.h"
 
@@ -855,7 +855,7 @@ int sd151_probe(struct i2c_client *client, struct regmap *regmap)
 
 	data->client = client;
 	data->regmap = regmap;
-
+	//data->dev = &client->dev;
 
 	if (gpio_is_valid(IRQ_GPIO)) {
 		if(gpio_request(IRQ_GPIO,"SD151_IRQ") < 0){
@@ -970,6 +970,9 @@ int sd151_probe(struct i2c_client *client, struct regmap *regmap)
 		sd151_rtc_init(dev);
 	}
 
+	if( sd151_proc_init(data)==0 ){
+		dev_info(dev, "PROC created\n");
+	}
 
 	try_input_device_registration(dev,data);
 
@@ -1006,6 +1009,7 @@ static int sd151_remove(struct i2c_client *client)
 	watchdog_unregister_device(&data->wdd);
 	free_irq(data->irq, sd151_irq);
 	input_free_device(data->inp.button_dev);
+	sd151_proc_remove(data);
 	unregister_reboot_notifier(&sd151_notifier);
 	return 0;
 }
