@@ -111,6 +111,8 @@ struct sd151_private {
 #define SD151_IRQ_ACKNOWLEDGE           0x07
 #define SD151_BUZZER_LOW                0x0A
 #define SD151_BUZZER_HIGH               0x0B
+#define SD151_FAN_FORCE_ENABLE          0x0C
+#define SD151_FAN_RELASE_CONTROL        0x0D
 
 #define SD151_WDOG_REFRESH              0x05
 #define SD151_WDOG_REFRESH_MAGIC_VALUE  0x0d1e
@@ -128,6 +130,7 @@ struct sd151_private {
 #define SD151_VOLTAGE_3V3_RPI           0x10
 
 #define SD151_BUTTONS                   0x14
+#define SD151_FAN                       0x15
 
 #define SD151_RTC0                      0x1A
 #define SD151_RTC1                      0x1B
@@ -140,5 +143,6 @@ struct sd151_private {
 
 extern int sd151_proc_init(struct sd151_private *);
 extern int sd151_proc_remove(struct sd151_private *);
+extern int sd151_wdog_init(struct sd151_private *);
 
 #endif /* _SD151_H */

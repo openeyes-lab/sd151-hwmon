@@ -31,7 +31,6 @@
  */
 
 #include <linux/module.h>
-//#include <linux/i2c.h>
 #include <linux/regmap.h>
 #include <linux/hwmon.h>
 #include <linux/jiffies.h>
@@ -40,7 +39,6 @@
 #include <linux/init.h>
 #include <linux/sched/signal.h>
 #include <asm/irq.h>
-//#include <asm/gpio.h>
 
 #include "sd151.h"
 
@@ -421,133 +419,6 @@ static const struct hwmon_chip_info sd151_chip_info = {
 	.info = sd151_info,
 };
 
-/****************************************************************************
- * WATCHDOG OPS
- ****************************************************************************/
-
-static int sd151_wdt_ping(struct watchdog_device *wdd)
-{
-	struct sd151_private *data = watchdog_get_drvdata(wdd);
-	int ret = regmap_write(data->regmap, SD151_WDOG_REFRESH,
-		SD151_WDOG_REFRESH_MAGIC_VALUE);
-
-	return ret;
-}
-
-static int sd151_wdt_start(struct watchdog_device *wdd)
-{
-	struct sd151_private *data = watchdog_get_drvdata(wdd);
-	int ret = regmap_write(data->regmap, SD151_COMMAND,	SD151_WDOG_ENABLE);
-
-	return ret;
-}
-
-static int sd151_wdt_stop(struct watchdog_device *wdd)
-{
-	struct sd151_private *data = watchdog_get_drvdata(wdd);
-	int	ret = regmap_write(data->regmap, SD151_COMMAND,	SD151_WDOG_DISABLE);
-
-	return ret;
-}
-
-static int sd151_wdt_settimeout(struct watchdog_device *wdd, unsigned int to)
-{
-	struct sd151_private *data = watchdog_get_drvdata(wdd);
-	int ret;
-	unsigned int reg;
-
-	if ((watchdog_timeout_invalid(wdd, to))||(to>255)) {
-		return -EINVAL;
-	}
-
-	/* build up register value */
-	reg = ((data->wdog_wait/5)<<SD151_WDOG_WAIT_POS)&SD151_WDOG_WAIT_MASK;
-	reg |= (to&SD151_WDOG_TIMEOUT_MASK)<<SD151_WDOG_TIMEOUT_POS;
-
-	ret = regmap_write(data->regmap, SD151_WDOG_TIMEOUT,reg);
-
-	wdd->timeout = to;
-
-	return 0;
-}
-
-/****************************************************************************
- * WATCHDOG STRUCTURES
- ****************************************************************************/
-static const struct watchdog_ops sd151_wdt_ops = {
-	.owner = THIS_MODULE,
-	.start = sd151_wdt_start,
-	.stop = sd151_wdt_stop,
-	.ping = sd151_wdt_ping,
-	.set_timeout	= sd151_wdt_settimeout,
-};
-
-static struct watchdog_info sd151_wdt_info = {
-	.options = WDIOF_KEEPALIVEPING | WDIOF_MAGICCLOSE | WDIOF_SETTIMEOUT,
-	.identity = "OPEN-EYES sd151 Watchdog",
-};
-
-/****************************************************************************
- * WATCHDOG INITIALIZATION
- ****************************************************************************/
-static int sd151_wdog_init(struct device *dev)
-{
-	struct sd151_private *data = dev_get_drvdata(dev);
-	int ret;
-	int tinfo;
-	bool update_device=false;
-
-	watchdog_set_drvdata(&data->wdd, data);
-
-	/* get timeout info from device */
-	ret = regmap_read(data->regmap, SD151_WDOG_TIMEOUT, &tinfo);
-	if (ret < 0) {
-		dev_err(dev, "failed to read I2C when init watchdog\n");
-		return ret;
-	}
-
-	data->device_wdog_timeout = (tinfo & SD151_WDOG_TIMEOUT_MASK)>>
-																										SD151_WDOG_TIMEOUT_POS;
-	data->device_wdog_wait = ((tinfo & SD151_WDOG_WAIT_MASK)>>
-																										SD151_WDOG_WAIT_POS)*5;
-
-	if (data->overlay_wdog_timeout==-1) {
-		/* If not defined in overlay get timeout value from device */
-		data->wdd.timeout = data->device_wdog_timeout;
-	} else {
-		/* else overlay have priority */
-		data->wdd.timeout = data->overlay_wdog_timeout;
-		update_device = true;
-	}
-
-	if (data->overlay_wdog_wait<SD151_MIN_WDOG_WAIT ) {
-		/* If not defined in overlay get timeout value from device */
-		data->wdog_wait = data->device_wdog_wait;
-	} else {
-		/* else overlay have priority */
-		data->wdog_wait = data->overlay_wdog_wait;
-		update_device = true;
-	}
-
-	sd151_wdt_info.firmware_version = data->firmware_version;
-	data->wdd.parent = dev;
-
-	data->wdd.info = &sd151_wdt_info;
-	data->wdd.ops = &sd151_wdt_ops;
-
-	watchdog_set_nowayout(&data->wdd, data->overlay_wdog_nowayout);
-
-	if (update_device)
-		sd151_wdt_settimeout(&data->wdd,data->wdd.timeout);
-
-	ret = watchdog_register_device(&data->wdd);
-	if (ret)
-		return ret;
-
-	dev_info(dev, "Watchdog registered!\n");
-
-	return 0;
-}
 
 /****************************************************************************
  * RTC OPS
@@ -855,7 +726,7 @@ int sd151_probe(struct i2c_client *client, struct regmap *regmap)
 
 	data->client = client;
 	data->regmap = regmap;
-	//data->dev = &client->dev;
+	data->dev = &client->dev;
 
 	if (gpio_is_valid(IRQ_GPIO)) {
 		if(gpio_request(IRQ_GPIO,"SD151_IRQ") < 0){
@@ -880,8 +751,6 @@ int sd151_probe(struct i2c_client *client, struct regmap *regmap)
 		return -EBUSY;
 	}
 
-
-
 	dev_set_drvdata(dev, data);
 
 	mutex_init(&data->update_lock);
@@ -905,7 +774,6 @@ int sd151_probe(struct i2c_client *client, struct regmap *regmap)
 		dev_err(dev, "failed to read I2C firmware version\n");
 		goto error;
 	}
-
 
 	data->firmware_version = val;
 
@@ -961,7 +829,7 @@ int sd151_probe(struct i2c_client *client, struct regmap *regmap)
 		else
 			data->overlay_wdog_wait = val;
 
-		ret = sd151_wdog_init(dev);
+		ret = sd151_wdog_init(data);
 		if (ret)
 			goto error;
 	}
@@ -971,7 +839,7 @@ int sd151_probe(struct i2c_client *client, struct regmap *regmap)
 	}
 
 	if( sd151_proc_init(data)==0 ){
-		dev_info(dev, "PROC created\n");
+		dev_info(dev, "PROC entry succesfully created\n");
 	}
 
 	try_input_device_registration(dev,data);
