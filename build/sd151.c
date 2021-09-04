@@ -31,7 +31,6 @@
  */
 
 #include <linux/module.h>
-#include <linux/regmap.h>
 #include <linux/hwmon.h>
 #include <linux/jiffies.h>
 #include <linux/reboot.h>
@@ -46,6 +45,12 @@
 
 static struct sd151_private *pdata;
 
+extern int sd151_proc_init(struct sd151_private *);
+extern int sd151_proc_remove(struct sd151_private *);
+extern int sd151_wdog_init(struct sd151_private *);
+
+extern const struct hwmon_chip_info sd151_chip_info;
+
 const struct regmap_config sd151_regmap_config = {
 	.max_register = SD151_NUM_REGS - 1,
 };
@@ -55,6 +60,56 @@ static const struct i2c_device_id sd151_id[] = {
 	{ }
 };
 MODULE_DEVICE_TABLE(i2c, sd151_id);
+
+/*****************************************************************************
+ * DEVICE COMMANS
+ *************************************************************************** */
+
+/**
+ * @brief DEVICE command
+ * @param [in] sd151_private struct sd151_private pointer
+ * @param [in] cmd command to send
+ * @return operation result
+ * @details Send a command to the sd151 device register
+ */
+int sd151_write_command(struct sd151_private *data, unsigned int cmd)
+{
+	int ret;
+
+	ret = regmap_write(data->regmap, SD151_COMMAND, cmd);
+
+	if (ret<0) {
+		dev_err(data->dev, "failed to write command %x\n",cmd);
+		data->communication_error++;
+	}
+
+	return ret;
+}
+
+EXPORT_SYMBOL_GPL(sd151_write_command);
+
+/**
+ * @brief DEVICE command
+ * @param [in] sd151_private struct sd151_private pointer
+ * @param [in] cmd command to send
+ * @return operation result
+ * @details Send a command to the sd151 device register
+ */
+int sd151_write_register(struct sd151_private *data, int reg, unsigned int cmd)
+{
+	int ret;
+
+	ret = regmap_write(data->regmap, reg, cmd);
+
+	if (ret<0) {
+		dev_err(data->dev, "failed to write register %x\n",reg);
+		data->communication_error++;
+	}
+
+	return ret;
+}
+
+EXPORT_SYMBOL_GPL(sd151_write_register);
 
 /*****************************************************************************
  * INPUT DEVICE
@@ -75,9 +130,6 @@ static void sd151_irq_work_handler(struct work_struct *work)
 	int ret;
 	int val;
 	int i,curr,prev,pwr;
-//	char *shutdown_argv[] = { "/sbin/shutdown", "-h", "-P", "now", NULL };
-
-	printk(KERN_INFO "interrupt on work");
 
 	/* get the chip status */
 	ret = regmap_read(priv->regmap, SD151_STATUS, &val);
@@ -104,320 +156,24 @@ static void sd151_irq_work_handler(struct work_struct *work)
 		priv->inp.button = val;
 		pwr = priv->inp.power;
 
-		printk(KERN_INFO "input btn=%x prev=%x pwr=%x",curr,prev,pwr);
 
 		for (i=0; i<NBUTTON; i++) {
 			if ((curr&1)!=(prev&1)) {
 				if (pwr&1) {
-					//if(curr&1){
-					//	set_current_state(TASK_INTERRUPTIBLE);
-					//	call_usermodehelper(shutdown_argv[0], shutdown_argv, NULL, UMH_NO_WAIT);
-					//}
-					//kernel_power_off();
-					//kill_cad_pid(SIGRTMIN + 4, 1);
-					printk(KERN_INFO "send power signal");
 					input_report_key(priv->inp.button_dev, KEY_POWER, curr&1);
-					//kernel_power_off()
 				} else {
 					input_report_key(priv->inp.button_dev, BTN_0+i, curr&1);
-					printk(KERN_INFO "send button");
 				}
 			}
 			curr=curr>>1;
 			prev=prev>>1;
 			pwr=pwr>>1;
 		}
-		printk(KERN_INFO "input sync");
 		input_sync(priv->inp.button_dev);
 	}
 
 }
-/**
- * @brief HWMON function sd151 get voltage
- * @param [in] dev struct device pointer
- * @param [in] ch channel
- * @return voltage in millivolt
- * @details Returns the voltage of specific channel, from the given register,
- * in millivolts.
- */
-static int sd151_get_voltage(struct device *dev, u8 ch)
-{
-	struct sd151_private *data = dev_get_drvdata(dev);
-	int voltage=0;
-	int ret;
-	int reg;
 
-	mutex_lock(&data->update_lock);
-
-	if (ch<NUM_CH_VIN) {
-		if (time_after(jiffies, data->volt_updated[ch] + HZ)
-																						|| !data->volt_valid[ch]) {
-			reg = SD151_VOLTAGE_5V_BOARD + ch*3;
-			/* Get value */
-			ret = regmap_read(data->regmap, reg, &voltage);
-			if (ret < 0) {
-				dev_err(dev, "failed to read I2C when get voltage\n");
-				goto close;
-			}
-			data->volt[ch]=voltage;
-			data->volt_updated[ch] = jiffies;
-			data->volt_valid[ch] = true;
-		} else {
-			voltage = data->volt[ch];
-		}
-
-		mutex_unlock(&data->update_lock);
-	}
-
-close:
-	mutex_unlock(&data->update_lock);
-	return voltage;
-}
-
-/**
- * @brief HWMON function sd151 get voltage MAX
- * @param [in] dev struct device pointer
- * @param [in] ch channel
- * @return voltage in millivolt
- * @details Returns the maximum voltage of specific channel, from the given
- * register, in millivolts.
- */
-static int sd151_get_voltage_max(struct device *dev, u8 ch)
-{
-	struct sd151_private *data = dev_get_drvdata(dev);
-	int voltage=0;
-	int ret;
-	int reg;
-
-	mutex_lock(&data->update_lock);
-
-	if (ch<NUM_CH_VIN) {
-		if (time_after(jiffies, data->volt_max_updated[ch] + HZ)
-																		|| !data->volt_max_valid[ch]) {
-			reg = SD151_VOLTAGE_5V_BOARD_MAX + ch*3;
-			/* Get value */
-			ret = regmap_read(data->regmap, reg, &voltage);
-			if (ret < 0) {
-				dev_err(dev, "failed to read I2C when get MAX voltage\n");
-				goto close;
-			}
-
-			data->volt_max[ch]=voltage;
-			data->volt_max_updated[ch] = jiffies;
-			data->volt_max_valid[ch] = true;
-		} else {
-			voltage = data->volt_max[ch];
-		}
-
-	}
-
-close:
-	mutex_unlock(&data->update_lock);
-	return voltage;
-}
-
-/**
- * @brief HWMON function sd151 get voltage MIN
- * @param [in] dev struct device pointer
- * @param [in] ch channel
- * @return voltage in millivolt
- * @details Returns the minimum voltage of specific channel, from the given
- * register, in millivolts.
- */
-static int sd151_get_voltage_min(struct device *dev, u8 ch)
-{
-	struct sd151_private *data = dev_get_drvdata(dev);
-	int voltage=0;
-	int ret;
-	int reg;
-
-	mutex_lock(&data->update_lock);
-
-	if (ch<NUM_CH_VIN) {
-		if (time_after(jiffies, data->volt_min_updated[ch] + HZ)
-																			|| !data->volt_min_valid[ch]) {
-			reg = SD151_VOLTAGE_5V_BOARD_MIN + ch*3;
-			/* Get value */
-			ret = regmap_read(data->regmap, reg, &voltage);
-			if (ret < 0) {
-				dev_err(dev, "failed to read I2C when get MIN voltage\n");
-				goto close;
-			}
-
-			data->volt_min[ch]=voltage;
-			data->volt_min_updated[ch] = jiffies;
-			data->volt_min_valid[ch] = true;
-		} else {
-			voltage = data->volt_min[ch];
-		}
-
-	}
-
-close:
-	mutex_unlock(&data->update_lock);
-	return voltage;
-}
-
-/**
- * @brief HWMON function input read method
- * @param [in] dev struct device pointer
- * @param [in] attr attribute
- * @param [in] channel
- * @param [out] val pointer
- * @return 9 if success.
- * @details Calls the right handler
- */
-static int sd151_read_in(struct device *dev, u32 attr, int channel, long *val)
-{
-	switch (attr) {
-		case hwmon_in_input:
-			if (channel < NUM_CH_VIN)
-				*val = sd151_get_voltage(dev,channel);
-			else
-				return -EOPNOTSUPP;
-			return 0;
-		case hwmon_in_max:
-				if (channel < NUM_CH_VIN)
-					*val = sd151_get_voltage_max(dev,channel);
-				else
-					return -EOPNOTSUPP;
-				return 0;
-		case hwmon_in_min:
-				if (channel < NUM_CH_VIN)
-					*val = sd151_get_voltage_min(dev,channel);
-				else
-					return -EOPNOTSUPP;
-				return 0;
-		default:
-			return -EOPNOTSUPP;
-	}
-}
-
-/**
- * @brief HWMON function read method
- * @param [in] dev struct device pointer
- * @param [in] type enum hwmon_sensor_types
- * @param [in] attr attribute
- * @param [in] channel
- * @param [out] val pointer
- * @return 0 if success.
- * @details Calls the right handler
- */
-static int sd151_read(struct device *dev, enum hwmon_sensor_types type,
-			u32 attr, int channel, long *val)
-{
-	switch (type) {
-		case hwmon_in:
-			return sd151_read_in(dev, attr, channel, val);
-		default:
-			return -EOPNOTSUPP;
-	}
-}
-
-/**
- * @brief HWMON function return channel name
- * @param [in] dev struct device pointer
- * @param [in] type enum hwmon_sensor_types
- * @param [in] attr attribute
- * @param [in] channel
- * @param [out] str string pointer
- * @return 0 if success.
- * @details Returns the label of channel.
- */
-static int sd151_read_string(struct device *dev, enum hwmon_sensor_types type,
-		       u32 attr, int channel, const char **str)
-{
-	switch (type) {
-		case hwmon_in:
-			switch (attr) {
-				case hwmon_in_label:
-					switch (channel) {
-						case 0:
-							*str = "BOARD 5V";
-							return 0;
-						case 1:
-							*str = "RPI 5V";
-							return 0;
-						case 2:
-							*str = "RPI 3V3";
-							return 0;
-						default:
-							*str = NULL;
-							break;
-					}
-					return -EOPNOTSUPP;
-				default:
-					return -EOPNOTSUPP;
-			}
-		default:
-			return -EOPNOTSUPP;
-	}
-	return -EOPNOTSUPP;
-}
-
-/**
- * @brief HWMON function return access attribute
- * @param [in] data unused
- * @param [in] type enum hwmon_sensor_types
- * @param [in] attr attribute
- * @param [in] channel
- * @return permission.
- * @details Returns file access permission
- */
-static umode_t sd151_is_visible(const void *data, enum hwmon_sensor_types type,
-			       u32 attr, int channel)
-{
-	switch (type) {
-		case hwmon_in:
-			switch (attr) {
-				case hwmon_in_input:
-					return S_IRUGO;
-				case hwmon_in_label:
-					return S_IRUGO;
- 				case hwmon_in_max:
-					return S_IRUGO;
-				case hwmon_in_min:
-					return S_IRUGO;
-				default:
-					break;
-			}
-			break;
-		default:
-			break;
-	}
-	return 0;
-}
-
-/****************************************************************************
- * HWMON STRUCTURES
- ****************************************************************************/
-static const u32 sd151_in_config[] = {
-	(HWMON_I_INPUT|HWMON_I_LABEL|HWMON_I_MAX|HWMON_I_MIN),
-	(HWMON_I_INPUT|HWMON_I_LABEL|HWMON_I_MAX|HWMON_I_MIN),
-	(HWMON_I_INPUT|HWMON_I_LABEL|HWMON_I_MAX|HWMON_I_MIN),
-	0
-};
-
-static const struct hwmon_channel_info sd151_voltage = {
-	.type = hwmon_in,
-	.config = sd151_in_config,
-};
-
-static const struct hwmon_channel_info *sd151_info[] = {
-	&sd151_voltage,
-	NULL
-};
-
-static const struct hwmon_ops sd151_hwmon_ops = {
-	.is_visible = sd151_is_visible,
-	.read = sd151_read,
-	.read_string = sd151_read_string,
-};
-
-static const struct hwmon_chip_info sd151_chip_info = {
-	.ops = &sd151_hwmon_ops,
-	.info = sd151_info,
-};
 
 
 /****************************************************************************
@@ -671,7 +427,8 @@ static struct notifier_block sd151_notifier = {
 	.priority	= 0,
 };
 
-int try_input_device_registration(struct device *dev,struct sd151_private *data)
+int try_input_device_registration(struct device *dev,
+	struct sd151_private *data, u16 pbutton)
 {
 	int ret;
 
@@ -699,7 +456,7 @@ int try_input_device_registration(struct device *dev,struct sd151_private *data)
 		return -ENOMEM;
 	}
 
-	data->inp.power = 0x0001;
+	data->inp.power = pbutton;
 
 	return 0;
 }
@@ -713,6 +470,7 @@ int sd151_probe(struct i2c_client *client, struct regmap *regmap)
 	struct sd151_private *data;
 	struct device *hwmon_dev;
 	unsigned int val;
+	u16 power_button;
 	int ret;
 
 	if (IS_ERR(regmap))
@@ -734,10 +492,7 @@ int sd151_probe(struct i2c_client *client, struct regmap *regmap)
     	return -EBUSY;
   	}
 		gpio_direction_input(IRQ_GPIO);
-		//if(gpio_set_debounce(IRQ_GPIO, 200) < 0){
-		//	dev_err(dev,"ERROR: gpio_set_debounce - %d\n", IRQ_GPIO);
-		//	return -EBUSY;
-		//}
+
 		data->irq = gpio_to_irq(IRQ_GPIO);
 		if (request_irq(data->irq, sd151_irq, IRQF_TRIGGER_FALLING, DRV_NAME, data)) {
 			dev_err(dev, "Can't allocate irq %d",data->irq);
@@ -777,31 +532,15 @@ int sd151_probe(struct i2c_client *client, struct regmap *regmap)
 
 	data->firmware_version = val;
 
+	if (val<VERSION) {
+		dev_warn(dev, "Firmware version %d is old. Upgrade!", val);
+	}
+
 	/* Get status */
 	ret = regmap_read(regmap, SD151_STATUS, &val);
 	if (ret < 0) {
 		dev_err(dev, "failed to access device when reading status\n");
 		goto error;
-	}
-	switch (val&SD151_STATUS_BOOT_MASK) {
-		case SD151_STATUS_POWERUP:
-			dev_info(dev, "start from POWER-UP");
-			break;
-		case SD151_STATUS_POWEROFF:
-			dev_info(dev, "start from POWER-OFF");
-			break;
-		case SD151_STATUS_REBOOT:
-			dev_info(dev, "start from REBOOT");
-			break;
-		case SD151_STATUS_HALT:
-			dev_info(dev, "start from HALT");
-			break;
-		case SD151_STATUS_WAKEUP:
-			dev_info(dev, "start from WAKEUP");
-			break;
-		default:
-			dev_err(dev, "start from unknown %x",val);
-			break;
 	}
 
 	/* HWMON register */
@@ -812,8 +551,6 @@ int sd151_probe(struct i2c_client *client, struct regmap *regmap)
 		ret = PTR_ERR(hwmon_dev);
 		goto error;
 	}
-
-	dev_info(dev, "HWMON registered as %s\n",dev_name(hwmon_dev));
 
 	if (device_property_read_bool(dev, "wdog_enabled")) {
 		if (device_property_read_bool(dev, "wdog_nowayout"))
@@ -834,21 +571,47 @@ int sd151_probe(struct i2c_client *client, struct regmap *regmap)
 			goto error;
 	}
 
+	/* Read BEEP property from device tree */
+	if (device_property_read_bool(dev, "beep_disabled")) {
+		data->beep_disabled = true;
+		sd151_write_command(data,SD151_BUZZER_DISABLE);
+	} else {
+		data->beep_disabled = false;
+		sd151_write_command(data,SD151_BUZZER_ENABLE);
+	}
+
+	/* Read POWER BUTTON property from device tree */
+	if (device_property_read_u32(dev, "power_button", &val)) {
+		power_button = 0;
+		sd151_write_register(data,SD151_BUTTONS,0);
+	} else {
+		power_button = val;
+		if (val==1)
+			sd151_write_register(data,SD151_BUTTONS,SD151_BUTTON_POWER1);
+		else if (val==2)
+			sd151_write_register(data,SD151_BUTTONS,SD151_BUTTON_POWER2);
+		else
+			dev_err(dev, "Bad button selected!\n");
+	}
+
+	/* Read RTC property from device tree */
 	if (device_property_read_bool(dev, "rtc_enabled")) {
 		sd151_rtc_init(dev);
 	}
 
-	if( sd151_proc_init(data)==0 ){
-		dev_info(dev, "PROC entry succesfully created\n");
+	if( sd151_proc_init(data)<0 ){
+		dev_err(dev, "PROC entry install error!\n");
 	}
 
-	try_input_device_registration(dev,data);
+	try_input_device_registration(dev,data,power_button);
 
 	/*
 	 * Register the tts_notifier to reboot notifier list so that the _TTS
 	 * object can also be evaluated when the system enters S5.
 	 */
 	register_reboot_notifier(&sd151_notifier);
+
+	dev_info(dev, "end of probe\n");
 
 	return 0;
 

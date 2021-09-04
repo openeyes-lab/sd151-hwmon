@@ -83,7 +83,7 @@ static int sd151_wdt_settimeout(struct watchdog_device *wdd, unsigned int to)
 /****************************************************************************
  * WATCHDOG STRUCTURES
  ****************************************************************************/
- 
+
 static const struct watchdog_ops sd151_wdt_ops = {
 	.owner = THIS_MODULE,
 	.start = sd151_wdt_start,
@@ -155,8 +155,6 @@ int sd151_wdog_init(struct sd151_private *data)
 	ret = watchdog_register_device(&data->wdd);
 	if (ret)
 		return ret;
-
-	dev_info(data->dev, "Watchdog registered!\n");
 
 	return 0;
 }

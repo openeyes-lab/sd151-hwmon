@@ -101,16 +101,28 @@ int sd151_proc_read( struct file *filp, char __user *ubuf, size_t count, loff_t 
 		}
 	}
 
+	if (status&SD151_STATUS_BEEP_DISABLED) {
+		len += sprintf(buf+len, "\nbeep        : disabled");
+	} else {
+		len += sprintf(buf+len, "\nbeep        : enabled");
+	}
+
 	/* get buttons */
 	ret = regmap_read(pdata->regmap, SD151_BUTTONS, &status);
 	if (ret < 0) {
 		dev_err(pdata->dev, "failed to read I2C\n");
 		return -EFAULT;
 	}
-	if (status&1)
+	if (status&SD151_BUTTON_PRESS1)
 		len += sprintf(buf+len, "\nbutton-1    : enabled");
-	if (status&2)
+	if (status&SD151_BUTTON_PRESS2)
 		len += sprintf(buf+len, "\nbutton-2    : enabled");
+	if (status&SD151_BUTTON_POWER1)
+		len += sprintf(buf+len, "\npower button: 1");
+	if (status&SD151_BUTTON_POWER2)
+		len += sprintf(buf+len, "\npower button: 2");
+	if ((status&(SD151_BUTTON_POWER2|SD151_BUTTON_POWER1))==0)
+		len += sprintf(buf+len, "\npower button: none");
 
 	/* get FAN */
 	ret = regmap_read(pdata->regmap, SD151_FAN, &status);

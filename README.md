@@ -170,4 +170,8 @@ In case of issue when loading overlay (ie the driver module is not loaded) use t
 sudo vcdbg log msg
 ```
 
-to debug 
+to debug
+
+### Upgrade firmware
+
+If the firmware inside folder hex is newer than the firmware loaded into MCU, the upgrade is possible throught the single wire firmware uploader upd.

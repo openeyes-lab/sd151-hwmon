@@ -39,6 +39,7 @@
 
 struct device;
 
+#define VERSION                         2
 #define NUM_CH_VIN                      3
 #define NBUTTON                         2
 
@@ -69,6 +70,9 @@ struct sd151_private {
   u16                           firmware_version;
   bool                          alarm_enabled;
   bool                          alarm_pending;
+  bool                          beep_disabled;
+  u16                           communication_error;
+  //int                           power_button;
   /* Voltage registers */
   bool                          volt_valid[NUM_CH_VIN];
   u16                           volt[NUM_CH_VIN];
@@ -100,6 +104,7 @@ struct sd151_private {
 #define SD151_STATUS_WDOG_EN            0x0008
 #define SD151_STATUS_WAKEUP_EN          0x0010
 #define SD151_STATUS_IRQ_BUTTONS        0x0100
+#define SD151_STATUS_BEEP_DISABLED      0x0200
 
 #define SD151_COMMAND                   0x04
 #define SD151_WDOG_ENABLE               0x01
@@ -113,6 +118,8 @@ struct sd151_private {
 #define SD151_BUZZER_HIGH               0x0B
 #define SD151_FAN_FORCE_ENABLE          0x0C
 #define SD151_FAN_RELASE_CONTROL        0x0D
+#define SD151_BUZZER_ENABLE             0x0E
+#define SD151_BUZZER_DISABLE            0x0F
 
 #define SD151_WDOG_REFRESH              0x05
 #define SD151_WDOG_REFRESH_MAGIC_VALUE  0x0d1e
@@ -130,6 +137,11 @@ struct sd151_private {
 #define SD151_VOLTAGE_3V3_RPI           0x10
 
 #define SD151_BUTTONS                   0x14
+#define SD151_BUTTON_PRESS1             0x0001
+#define SD151_BUTTON_PRESS2             0x0002
+#define SD151_BUTTON_POWER1             0x0100
+#define SD151_BUTTON_POWER2             0x0200
+
 #define SD151_FAN                       0x15
 
 #define SD151_RTC0                      0x1A
@@ -140,9 +152,5 @@ struct sd151_private {
 #define SD151_WAKEUP2                   0x1F
 
 #define SD151_MIN_WDOG_WAIT             45
-
-extern int sd151_proc_init(struct sd151_private *);
-extern int sd151_proc_remove(struct sd151_private *);
-extern int sd151_wdog_init(struct sd151_private *);
 
 #endif /* _SD151_H */
