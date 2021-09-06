@@ -174,4 +174,20 @@ to debug
 
 ### Upgrade firmware
 
-If the firmware inside folder hex is newer than the firmware loaded into MCU, the upgrade is possible throught the single wire firmware uploader upd.
+If the firmware upgrade is needed, can be done throught the single wire firmware uploader sd151upgrade.
+
+Upgrade instructions:
+
+compile single wire update program
+
+```
+cd firmware
+make
+```
+
+switch to su and run program with high priority
+
+```
+su
+nice --20 ./sd151upgrade
+```
