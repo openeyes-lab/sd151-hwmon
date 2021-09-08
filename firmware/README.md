@@ -1,14 +1,6 @@
 # Linux updi stand alone programmer
 
-This program is derived from:
-
-https://github.com/Polarisru/updiprog.git
-
-and
-
-https://github.com/mraardvark/pyupdi.git
-
-but doesn't use an UART but directly drive a single GPIO
+This program allow to download a new firmware on Microchip ATTiny MCU
 
 # Prerequisite
 
@@ -31,14 +23,14 @@ sudo apt upgrade
 sudo apt-get install raspberrypi-kernel-headers
 ```
 
-Download from git:
 
 ```
-git clone http://server.local/git/LinuxTool/updi_programmer.git
-```
-
-```
-cd updi_programmer
+cd firmware
 make
 ```
 
+the application should be executed as root with highest priority
+
+```
+su && nice --20 ./sd151upgrade
+``` 
