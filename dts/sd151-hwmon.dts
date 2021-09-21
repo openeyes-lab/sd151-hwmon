@@ -20,6 +20,7 @@
 				reg = <0x35>;
 				rtc_enabled;
 				wdog_enabled;
+				updi_lock;
 				power_button = <2>;
 				wdog_timeout = <15>;
 				wdog_wait = <120>;

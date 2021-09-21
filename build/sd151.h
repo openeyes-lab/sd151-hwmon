@@ -44,6 +44,7 @@ struct device;
 #define NBUTTON                         2
 
 #define IRQ_GPIO                        23
+#define UPDI_GPIO                       24
 
 struct sd151_input {
   struct input_dev     *button_dev;
