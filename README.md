@@ -39,7 +39,7 @@ build driver
 ```
 cd sd151_hwmon/build
 make
-make install
+sudo make install
 ```
 
 ### Implement device Tree overlay
